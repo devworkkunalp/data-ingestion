@@ -72,12 +72,15 @@ public class JapanSalaryFunction
             long medianAnnual = 5500000; // Baseline JPY
             if (salaryNode != null)
             {
-                var text = salaryNode.InnerText;
-                var match = System.Text.RegularExpressions.Regex.Match(text, @"(\d+(\.\d+)?)");
+                var text = HtmlAgilityPack.HtmlEntity.DeEntitize(salaryNode.InnerText);
+                // Match 550万円 or 5,500,000
+                var match = System.Text.RegularExpressions.Regex.Match(text.Replace(",", ""), @"(\d+(\.\d+)?)");
                 if (match.Success && double.TryParse(match.Groups[1].Value, out var nenshu))
                 {
-                    medianAnnual = (long)(nenshu * 10000); 
-                    if (nenshu < 1000) medianAnnual = (long)(nenshu * 10000); // Handle 550 vs 5500000
+                    if (nenshu < 10000) 
+                        medianAnnual = (long)(nenshu * 10000); // Handle "550" (万円)
+                    else 
+                        medianAnnual = (long)nenshu; // Handle "5500000"
                 }
             }
 

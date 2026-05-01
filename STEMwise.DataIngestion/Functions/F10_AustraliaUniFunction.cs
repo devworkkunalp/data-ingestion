@@ -48,11 +48,14 @@ public class AustraliaUniFunction
 
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
-            var csvEntry = archive.Entries.FirstOrDefault(e => e.Name.Contains("GOS") && e.Name.EndsWith(".csv"));
+            
+            _logger.LogInformation("Found {Count} files in ZIP: {Files}", archive.Entries.Count, string.Join(", ", archive.Entries.Select(e => e.Name)));
+
+            var csvEntry = archive.Entries.FirstOrDefault(e => e.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase));
             
             if (csvEntry == null)
             {
-                _logger.LogWarning("No GOS CSV found in QILT ZIP.");
+                _logger.LogWarning("No CSV found in QILT ZIP.");
                 return;
             }
 
@@ -68,11 +71,19 @@ public class AustraliaUniFunction
             {
                 try
                 {
-                    var instName = csv.GetField<string>("Institution Name") ?? csv.GetField<string>("Institution");
-                    var empRateStr = csv.GetField<string>("Full-time Employment Rate") ?? csv.GetField<string>("Employment Rate");
+                    var instName = csv.GetField<string>("Institution Name") 
+                                ?? csv.GetField<string>("Institution")
+                                ?? csv.GetField<string>("INSTITUTION");
+                    
+                    var empRateStr = csv.GetField<string>("Full-time Employment Rate") 
+                                  ?? csv.GetField<string>("Employment Rate")
+                                  ?? csv.GetField<string>("EMPLOYMENT");
 
-                    if (string.IsNullOrEmpty(instName) || !decimal.TryParse(empRateStr?.Replace("%", ""), out var empRate))
+                    if (string.IsNullOrEmpty(instName) || string.IsNullOrEmpty(empRateStr))
                         continue;
+
+                    if (!decimal.TryParse(empRateStr.Replace("%", "").Trim(), out var empRate))
+                        empRate = 0;
 
                     var cricosCode = "AU" + Math.Abs(instName.GetHashCode()).ToString();
 

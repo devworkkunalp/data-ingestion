@@ -15,11 +15,13 @@ var host = new HostBuilder()
 
         // Ingestion DB — orchestratorDB (raw data written by jobs)
         services.AddDbContext<IngestionDbContext>(options =>
-            options.UseSqlServer(config["OrchestratorConnection"]));
+            options.UseSqlServer(config["OrchestratorConnection"], 
+                sqlOptions => sqlOptions.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null)));
 
         // API DB — smtpwiseDB (processed display-ready data)
         services.AddDbContext<ApiDbContext>(options =>
-            options.UseSqlServer(config["DefaultConnection"]));
+            options.UseSqlServer(config["DefaultConnection"], 
+                sqlOptions => sqlOptions.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null)));
 
         // Default HTTP Client configuration for all requests
         services.ConfigureHttpClientDefaults(builder =>
@@ -27,6 +29,7 @@ var host = new HostBuilder()
             builder.ConfigureHttpClient(client =>
             {
                 client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                client.Timeout = TimeSpan.FromSeconds(300); // Increased from 100s to 300s
             });
         });
 
