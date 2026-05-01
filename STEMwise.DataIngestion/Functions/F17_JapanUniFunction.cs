@@ -51,15 +51,15 @@ public class JapanUniFunction
             var doc = new HtmlAgilityPack.HtmlDocument();
             doc.LoadHtml(html);
 
-            // Robust selector: try wikitable first, then fall back to any table with enough rows
-            var tables = doc.DocumentNode.SelectNodes("//table[contains(@class, 'wikitable')]") 
-                      ?? doc.DocumentNode.SelectNodes("//table[count(.//tr) > 5]");
+            var tables = doc.DocumentNode.SelectNodes("//table[.//tr[td]]");
             
             if (tables == null)
             {
                 _logger.LogWarning("Could not find JP university tables.");
                 return;
             }
+
+            _logger.LogInformation("Found {Count} tables to process.", tables.Count);
 
             var fetchedAt = DateTime.UtcNow;
             int updated = 0;
