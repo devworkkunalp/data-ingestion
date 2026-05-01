@@ -8,10 +8,9 @@ using STEMwise.DataIngestion.Models;
 namespace STEMwise.DataIngestion.Functions;
 
 /// <summary>
-/// F-08: Canada Visa & PGWP Pipeline (IRCC)
-/// Fetches the live Express Entry (EE) Rounds of Invitations JSON feed 
-/// to capture the latest Comprehensive Ranking System (CRS) cutoffs,
-/// specifically looking for STEM-targeted draws or General draws.
+/// F-08: Canada Visa & PGWP Pipeline (Web Scraper)
+/// Scrapes the live Express Entry (EE) Rounds of Invitations HTML page
+/// to capture the latest CRS cutoffs, bypassing the timeout-prone JSON feed.
 /// </summary>
 public class CanadaVisaFunction
 {
@@ -37,73 +36,73 @@ public class CanadaVisaFunction
         try
         {
             var client = _httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
             
-            // IRCC official Express Entry rounds JSON feed
-            var url = "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_123_en.json";
+            var url = "https://www.canada.ca/en/immigration-refugees-citizenship/corporate/mandate/policies-operational-instructions-agreements/ministerial-instructions/express-entry-rounds.html";
 
-            _logger.LogInformation("Fetching live Express Entry rounds JSON...");
+            _logger.LogInformation("Scraping live Express Entry rounds HTML...");
             var response = await client.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Express Entry JSON endpoint returned {StatusCode}.", response.StatusCode);
+                _logger.LogWarning("Express Entry HTML endpoint returned {StatusCode}.", response.StatusCode);
                 return;
             }
 
-            var json = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-            
-            var rounds = doc.RootElement.GetProperty("rounds");
-            
+            var html = await response.Content.ReadAsStringAsync();
+            var doc = new HtmlAgilityPack.HtmlDocument();
+            doc.LoadHtml(html);
+
+            var table = doc.DocumentNode.SelectSingleNode("//table");
+            if (table == null)
+            {
+                _logger.LogWarning("Could not find the EE rounds table.");
+                return;
+            }
+
             int latestGeneralCrs = 0;
             int latestStemCrs = 0;
             var fetchedAt = DateTime.UtcNow;
 
-            // Iterate backwards (or forwards depending on JSON sort) to find the latest draws
-            foreach (var round in rounds.EnumerateArray())
+            var rows = table.SelectNodes(".//tr");
+            if (rows != null)
             {
-                var drawType = round.GetProperty("drawName").GetString() ?? "";
-                var crsStr = round.GetProperty("crs").GetString() ?? "0";
-                
-                // Remove commas if any (e.g., "1,000")
-                if (!int.TryParse(crsStr.Replace(",", ""), out int crsScore) || crsScore == 0)
-                    continue;
-
-                // Capture the most recent General draw
-                if (latestGeneralCrs == 0 && (drawType.Contains("General") || drawType.Contains("No program specified")))
+                foreach (var row in rows.Skip(1))
                 {
-                    latestGeneralCrs = crsScore;
-                }
+                    var cols = row.SelectNodes("td|th");
+                    if (cols == null || cols.Count < 6) continue;
 
-                // Capture the most recent STEM targeted draw
-                if (latestStemCrs == 0 && drawType.Contains("STEM"))
-                {
-                    latestStemCrs = crsScore;
-                }
+                    var drawType = cols[2].InnerText; // Round type
+                    var crsStr = cols[5].InnerText;   // CRS score of lowest-ranked candidate
 
-                // If we found both, we can stop searching
-                if (latestGeneralCrs > 0 && latestStemCrs > 0)
-                    break;
+                    if (!int.TryParse(System.Text.RegularExpressions.Regex.Replace(crsStr, @"[^\d]", ""), out int crsScore))
+                        continue;
+
+                    if (latestGeneralCrs == 0 && (drawType.Contains("General") || drawType.Contains("No program specified")))
+                    {
+                        latestGeneralCrs = crsScore;
+                    }
+
+                    if (latestStemCrs == 0 && drawType.Contains("STEM"))
+                    {
+                        latestStemCrs = crsScore;
+                    }
+
+                    if (latestGeneralCrs > 0 && latestStemCrs > 0)
+                        break;
+                }
             }
 
             _logger.LogInformation("Extracted CRS Scores - General: {General}, STEM: {Stem}", latestGeneralCrs, latestStemCrs);
 
-            // Save to Database
-            if (latestGeneralCrs > 0)
-            {
-                await SaveMetricAsync("ExpressEntry", "GeneralCRSCutoff", latestGeneralCrs, fetchedAt);
-            }
-            if (latestStemCrs > 0)
-            {
-                await SaveMetricAsync("ExpressEntry", "StemCRSCutoff", latestStemCrs, fetchedAt);
-            }
+            if (latestGeneralCrs > 0) await SaveMetricAsync("ExpressEntry", "GeneralCRSCutoff", latestGeneralCrs, fetchedAt);
+            if (latestStemCrs > 0) await SaveMetricAsync("ExpressEntry", "StemCRSCutoff", latestStemCrs, fetchedAt);
 
             await _ingestionDb.SaveChangesAsync();
-            _logger.LogInformation("F-08 CanadaVisaSync complete. Saved real-time Express Entry cutoffs.");
+            _logger.LogInformation("F-08 CanadaVisaSync complete.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "F-08 CanadaVisaSync failed due to an exception. Network block or format change.");
-            // Do not throw to prevent crashing the entire Function App runtime
+            _logger.LogError(ex, "F-08 CanadaVisaSync failed due to an exception.");
         }
     }
 

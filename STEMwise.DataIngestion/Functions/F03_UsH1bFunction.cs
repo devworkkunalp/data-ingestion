@@ -84,13 +84,20 @@ public class UsH1bFunction
                     var employer = cols[0].InnerText.Trim();
                     var socTitle = cols[1].InnerText.Trim(); // Job Title
                     var salaryStr = cols[2].InnerText.Trim().Replace(",", "");
-                    var city = cols[3].InnerText.Trim();
-                    var state = cols[4].InnerText.Trim();
-                    var submitDate = cols[5].InnerText.Trim();
+                    var location = cols[3].InnerText.Trim(); // Usually "CITY, ST"
                     var status = cols[6].InnerText.Trim();
 
                     if (!status.Equals("CERTIFIED", StringComparison.OrdinalIgnoreCase)) continue;
                     if (!decimal.TryParse(salaryStr, out var prevailingWage)) continue;
+
+                    string city = location;
+                    string state = "";
+                    if (location.Contains(","))
+                    {
+                        var parts = location.Split(',');
+                        city = parts[0].Trim();
+                        state = parts[1].Trim();
+                    }
 
                     _ingestionDb.RawH1bRecords.Add(new RawH1bRecord
                     {
