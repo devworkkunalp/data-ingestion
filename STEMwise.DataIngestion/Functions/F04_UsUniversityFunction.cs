@@ -150,9 +150,7 @@ public class UsUniversityFunction
         if (outcome == null) _ingestionDb.RawUniversityOutcomes.Add(new RawUniversityOutcome { RawUniversityId = uniId, RoleSlug = role, MedianSalaryLocal = salary ?? 90000, SalaryCurrency = "USD", DataYear = 2023, DataSource = "US-AUTO", FetchedAt = fetchedAt });
         else { outcome.MedianSalaryLocal = salary ?? outcome.MedianSalaryLocal; outcome.FetchedAt = fetchedAt; }
     }
-
     }
-}
 
 internal class ScorecardApiResponse
 {

@@ -114,5 +114,4 @@ public class UkSalaryFunction
         }
         catch (Exception ex) { _logger.LogError(ex, "F-05 UkSalarySync failed."); }
     }
-    }
 }
