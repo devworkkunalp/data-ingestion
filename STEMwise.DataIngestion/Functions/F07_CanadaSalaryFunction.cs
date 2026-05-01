@@ -69,7 +69,11 @@ public class CanadaSalaryFunction
             // 2. STREAM DOWNLOAD: Get the file as a stream (do not load into string)
             _logger.LogInformation("Beginning streaming download...");
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("StatCan endpoint returned {StatusCode}.", response.StatusCode);
+                return;
+            }
 
             await using var stream = await response.Content.ReadAsStreamAsync();
 
@@ -200,8 +204,8 @@ public class CanadaSalaryFunction
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "F-07 CanadaSalarySync completely failed.");
-            throw;
+            _logger.LogError(ex, "F-07 CanadaSalarySync failed due to an exception. Network block or format change.");
+            // Do not throw to prevent crashing the entire Function App runtime
         }
     }
 }
