@@ -80,6 +80,11 @@ public class UsH1bFunction
 
                     // Flexible status check
                     if (!status.Contains("CERTIFIED", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    // Broad Software/Tech filter
+                    if (!socTitle.Contains("SOFTWARE", StringComparison.OrdinalIgnoreCase) && 
+                        !socTitle.Contains("COMPUTER", StringComparison.OrdinalIgnoreCase) &&
+                        !socTitle.Contains("DEVELOPER", StringComparison.OrdinalIgnoreCase)) continue;
                     
                     if (!decimal.TryParse(System.Text.RegularExpressions.Regex.Replace(salaryStr, @"[^\d\.]", ""), out var prevailingWage)) continue;
 

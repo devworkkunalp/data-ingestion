@@ -16,12 +16,12 @@ var host = new HostBuilder()
         // Ingestion DB — orchestratorDB (raw data written by jobs)
         services.AddDbContext<IngestionDbContext>(options =>
             options.UseSqlServer(config["OrchestratorConnection"], 
-                sqlOptions => sqlOptions.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null)));
+                sqlOptions => sqlOptions.EnableRetryOnFailure(10, TimeSpan.FromSeconds(15), null)));
 
         // API DB — smtpwiseDB (processed display-ready data)
         services.AddDbContext<ApiDbContext>(options =>
             options.UseSqlServer(config["DefaultConnection"], 
-                sqlOptions => sqlOptions.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null)));
+                sqlOptions => sqlOptions.EnableRetryOnFailure(10, TimeSpan.FromSeconds(15), null)));
 
         // Default HTTP Client configuration for all requests
         services.ConfigureHttpClientDefaults(builder =>

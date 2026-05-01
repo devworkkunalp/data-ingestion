@@ -120,14 +120,13 @@ public class CanadaSalaryFunction
                     var noc = csv.GetField<string>("National Occupational Classification (NOC)");
                     if (string.IsNullOrEmpty(noc)) continue;
 
-                    // Match against our target list
-                    var targetNoc = NocToRole.Keys.FirstOrDefault(k => noc.Contains($"[{k}]"));
+                    // Match against our target list (Remove brackets for flexibility)
+                    var targetNoc = NocToRole.Keys.FirstOrDefault(k => noc.Contains(k));
                     if (targetNoc == null) continue;
 
-                    // "Wages" must be "Median hourly wage" or similar. StatCan provides weekly and hourly.
-                    // Let's assume we find "Average weekly wage" or similar metric.
+                    // Loosen wage description to catch plurals or slight variations
                     var wagesDesc = csv.GetField<string>("Wages");
-                    if (wagesDesc != "Average weekly wage") continue;
+                    if (string.IsNullOrEmpty(wagesDesc) || !wagesDesc.Contains("weekly wage")) continue;
 
                     var valueStr = csv.GetField<string>("VALUE");
                     if (!decimal.TryParse(valueStr, out var weeklyWage)) continue;
