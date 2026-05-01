@@ -43,7 +43,11 @@ public class CanadaVisaFunction
 
             _logger.LogInformation("Fetching live Express Entry rounds JSON...");
             var response = await client.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Express Entry JSON endpoint returned {StatusCode}.", response.StatusCode);
+                return;
+            }
 
             var json = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);
@@ -98,8 +102,8 @@ public class CanadaVisaFunction
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "F-08 CanadaVisaSync failed");
-            throw; // Fail hard in dev
+            _logger.LogError(ex, "F-08 CanadaVisaSync failed due to an exception. Network block or format change.");
+            // Do not throw to prevent crashing the entire Function App runtime
         }
     }
 

@@ -40,7 +40,11 @@ public class JapanUniFunction
 
             _logger.LogInformation("Downloading live MEXT CSV...");
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("MEXT CSV endpoint returned {StatusCode}. The open data URL may have changed.", response.StatusCode);
+                return;
+            }
 
             await using var stream = await response.Content.ReadAsStreamAsync();
             
@@ -118,8 +122,8 @@ public class JapanUniFunction
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "F-17 JapanUniSync failed");
-            throw; // Fail hard in dev
+            _logger.LogError(ex, "F-17 JapanUniSync failed due to an exception. Network block or format change.");
+            // Do not throw to prevent crashing the entire Function App runtime
         }
     }
 }

@@ -42,7 +42,11 @@ public class UkUniversityFunction
 
             _logger.LogInformation("Downloading live HESA CSV...");
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("HESA CSV endpoint returned {StatusCode}. The URL might be blocked or changed.", response.StatusCode);
+                return;
+            }
 
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new StreamReader(stream);
@@ -116,8 +120,8 @@ public class UkUniversityFunction
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "F-06 UkUniversitySync failed");
-            throw; // Fail hard in dev
+            _logger.LogError(ex, "F-06 UkUniversitySync failed due to an exception. Check DB connection strings or network.");
+            // Do not throw to prevent crashing the entire Function App runtime
         }
     }
 }

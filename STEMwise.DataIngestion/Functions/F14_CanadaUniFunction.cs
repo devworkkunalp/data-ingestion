@@ -40,7 +40,11 @@ public class CanadaUniFunction
 
             _logger.LogInformation("Downloading live IRCC DLI CSV...");
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("IRCC DLI CSV endpoint returned {StatusCode}. The open data URL may have changed.", response.StatusCode);
+                return;
+            }
 
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new StreamReader(stream);

@@ -56,7 +56,7 @@ public class CanadaSalaryFunction
             var client = _httpClientFactory.CreateClient("StatCan");
             
             // StatCan Full Table Download (ZIP containing a large CSV)
-            var url = "getFullTableDownloadCSV/14100340/en";
+            var url = "getFullTableDownloadCSV/14100417/en";
 
             // 1. SMART TRIGGER: Check if the file is new before downloading 50MB
             var request = new HttpRequestMessage(HttpMethod.Head, url);

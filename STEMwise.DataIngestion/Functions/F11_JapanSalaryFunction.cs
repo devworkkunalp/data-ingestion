@@ -182,8 +182,8 @@ public class JapanSalaryFunction
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "F-11 JapanSalarySync completely failed.");
-            throw;
+            _logger.LogError(ex, "F-11 JapanSalarySync failed due to an exception. Network block or format change.");
+            // Do not throw to prevent crashing the entire Function App runtime
         }
     }
 }

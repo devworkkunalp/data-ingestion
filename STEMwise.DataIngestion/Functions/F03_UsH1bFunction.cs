@@ -42,7 +42,11 @@ public class UsH1bFunction
 
             _logger.LogInformation("Streaming DOL LCA Excel file...");
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode(); // Will fail on dev if URL is wrong
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("DOL LCA endpoint returned {StatusCode}. The URL might be blocked or changed.", response.StatusCode);
+                return;
+            }
 
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var workbook = new XLWorkbook(stream);
@@ -118,8 +122,8 @@ public class UsH1bFunction
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "F-03 UsH1bSync failed");
-            throw; // Fail hard on dev
+            _logger.LogError(ex, "F-03 UsH1bSync failed due to an exception. Check DB connection strings or file format.");
+            // Do not throw to prevent crashing the entire Function App runtime
         }
     }
 }
