@@ -54,14 +54,14 @@ public class UsH1bFunction
             doc.LoadHtml(html);
 
             // Find the main data table
-            var table = doc.DocumentNode.SelectSingleNode("//table[@id='myTable']");
+            var table = doc.DocumentNode.SelectSingleNode("//table[@id='myTable']") ?? doc.DocumentNode.SelectSingleNode("//table");
             if (table == null)
             {
                 _logger.LogWarning("Could not find the H1B data table on the page.");
                 return;
             }
 
-            var rows = table.SelectNodes(".//tbody/tr");
+            var rows = table.SelectNodes(".//tr"); // Some tables don't have explicit tbody in HAP
             if (rows == null)
             {
                 _logger.LogWarning("H1B data table was empty.");
@@ -89,7 +89,7 @@ public class UsH1bFunction
                     var submitDate = cols[5].InnerText.Trim();
                     var status = cols[6].InnerText.Trim();
 
-                    if (status != "CERTIFIED") continue;
+                    if (!status.Equals("CERTIFIED", StringComparison.OrdinalIgnoreCase)) continue;
                     if (!decimal.TryParse(salaryStr, out var prevailingWage)) continue;
 
                     _ingestionDb.RawH1bRecords.Add(new RawH1bRecord
