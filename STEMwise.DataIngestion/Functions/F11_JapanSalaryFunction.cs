@@ -12,7 +12,7 @@ namespace STEMwise.DataIngestion.Functions;
 
 /// <summary>
 /// F-11: Japan Salary Pipeline (Web Scraper)
-/// Scrapes Japanese IT salary data from heikinnenshu.jp to bypass the dead MHLW CSV link.
+/// Scrapes Japanese IT salary data from nenshu-shushi.jp to bypass the dead MHLW CSV link.
 /// </summary>
 public class JapanSalaryFunction
 {
@@ -50,13 +50,13 @@ public class JapanSalaryFunction
             var client = _httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
             
-            var url = "https://heikinnenshu.jp/it/software.html";
+            var url = "https://nenshu-shushi.jp/nenshu/shokushu/se";
 
-            _logger.LogInformation("Scraping Japan Software Engineer Salary from heikinnenshu.jp...");
+            _logger.LogInformation("Scraping Japan Software Engineer Salary from nenshu-shushi.jp...");
             var response = await client.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Heikinnenshu endpoint returned {StatusCode}.", response.StatusCode);
+                _logger.LogWarning("Nenshu-shushi endpoint returned {StatusCode}.", response.StatusCode);
                 return;
             }
 
@@ -64,19 +64,20 @@ public class JapanSalaryFunction
             var doc = new HtmlAgilityPack.HtmlDocument();
             doc.LoadHtml(html);
 
-            // Find the main salary text (e.g., 524万円)
-            var salaryNode = doc.DocumentNode.SelectSingleNode("//h3[contains(text(), '平均年収')]/following-sibling::p") 
-                          ?? doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'nenshu_box')]//span");
+            // Find the salary value (e.g., 550万円)
+            var salaryNode = doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'nenshu-value')]")
+                          ?? doc.DocumentNode.SelectSingleNode("//span[contains(text(), '万円')]")
+                          ?? doc.DocumentNode.SelectSingleNode("//th[contains(text(), '平均年収')]/following-sibling::td");
             
-            long medianAnnual = 5500000; // Baseline JPY if scraping fails
+            long medianAnnual = 5500000; // Baseline JPY
             if (salaryNode != null)
             {
                 var text = salaryNode.InnerText;
-                // Extract numbers, e.g., "524" from "524万円"
-                var match = System.Text.RegularExpressions.Regex.Match(text, @"(\d+)");
-                if (match.Success && long.TryParse(match.Groups[1].Value, out var nenshu))
+                var match = System.Text.RegularExpressions.Regex.Match(text, @"(\d+(\.\d+)?)");
+                if (match.Success && double.TryParse(match.Groups[1].Value, out var nenshu))
                 {
-                    medianAnnual = nenshu * 10000; // 1万円 = 10,000 JPY
+                    medianAnnual = (long)(nenshu * 10000); 
+                    if (nenshu < 1000) medianAnnual = (long)(nenshu * 10000); // Handle 550 vs 5500000
                 }
             }
 

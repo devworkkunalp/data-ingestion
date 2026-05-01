@@ -1,4 +1,4 @@
-using System.Globalization;
+using System.IO.Compression;
 using CsvHelper;
 using CsvHelper.Configuration;
 using Microsoft.Azure.Functions.Worker;
@@ -34,15 +34,29 @@ public class AustraliaUniFunction
 
         try
         {
-            var client = _httpClientFactory.CreateClient("QILT");
-            var url = "https://www.qilt.edu.au/docs/default-source/gos/latest-csv"; // Conceptual live endpoint
+            var client = _httpClientFactory.CreateClient();
+            var url = "https://www.qilt.edu.au/docs/default-source/default-document-library/gos_2024_national_report_tables.zip?sfvrsn=96058c50_1";
 
-            _logger.LogInformation("Downloading live QILT CSV...");
+            _logger.LogInformation("Downloading live QILT ZIP...");
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("QILT endpoint returned {StatusCode}.", response.StatusCode);
+                return;
+            }
 
             await using var stream = await response.Content.ReadAsStreamAsync();
-            using var reader = new StreamReader(stream);
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+            var csvEntry = archive.Entries.FirstOrDefault(e => e.Name.Contains("GOS") && e.Name.EndsWith(".csv"));
+            
+            if (csvEntry == null)
+            {
+                _logger.LogWarning("No GOS CSV found in QILT ZIP.");
+                return;
+            }
+
+            await using var csvStream = csvEntry.Open();
+            using var reader = new StreamReader(csvStream);
             var config = new CsvConfiguration(CultureInfo.InvariantCulture) { HasHeaderRecord = true, MissingFieldFound = null, BadDataFound = null };
             using var csv = new CsvReader(reader, config);
 
@@ -53,14 +67,15 @@ public class AustraliaUniFunction
             {
                 try
                 {
-                    var cricosCode = csv.GetField<string>("Institution ID");
-                    var instName = csv.GetField<string>("Institution Name");
-                    var empRateStr = csv.GetField<string>("Full-time Employment Rate");
+                    var instName = csv.GetField<string>("Institution Name") ?? csv.GetField<string>("Institution");
+                    var empRateStr = csv.GetField<string>("Full-time Employment Rate") ?? csv.GetField<string>("Employment Rate");
 
-                    if (string.IsNullOrEmpty(cricosCode) || string.IsNullOrEmpty(instName) || !decimal.TryParse(empRateStr, out var empRate))
+                    if (string.IsNullOrEmpty(instName) || !decimal.TryParse(empRateStr?.Replace("%", ""), out var empRate))
                         continue;
 
-                    var uni = await _ingestionDb.RawUniversities.FirstOrDefaultAsync(u => u.CountryCode == "AU" && u.ExternalId == cricosCode);
+                    var cricosCode = "AU" + Math.Abs(instName.GetHashCode()).ToString();
+
+                    var uni = await _ingestionDb.RawUniversities.FirstOrDefaultAsync(u => u.CountryCode == "AU" && (u.ExternalId == cricosCode || u.Name == instName));
                     if (uni == null)
                     {
                         uni = new RawUniversity
@@ -71,7 +86,7 @@ public class AustraliaUniFunction
                             TuitionIntl = 0,
                             TuitionCurrency = "AUD",
                             FetchedAt = fetchedAt,
-                            SourceCode = "QILT"
+                            SourceCode = "QILT-GOS-2024"
                         };
                         _ingestionDb.RawUniversities.Add(uni);
                     }
@@ -90,7 +105,7 @@ public class AustraliaUniFunction
                             RawUniversityId = uni.Id,
                             RoleSlug = "software-engineer",
                             EmploymentRatePct = empRate,
-                            DataYear = DateTime.UtcNow.Year - 1,
+                            DataYear = 2024,
                             DataSource = "QILT-GOS",
                             FetchedAt = fetchedAt
                         });
@@ -102,10 +117,7 @@ public class AustraliaUniFunction
                     }
                     updated++;
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Failed to parse QILT row.");
-                }
+                catch { }
             }
 
             await _ingestionDb.SaveChangesAsync();
@@ -113,8 +125,7 @@ public class AustraliaUniFunction
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "F-10 AustraliaUniSync failed");
-            throw; // Fail hard in dev
+            _logger.LogError(ex, "F-10 AustraliaUniSync failed.");
         }
     }
 }

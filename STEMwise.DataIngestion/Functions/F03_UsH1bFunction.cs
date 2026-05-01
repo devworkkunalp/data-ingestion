@@ -1,4 +1,4 @@
-using ClosedXML.Excel;
+using HtmlAgilityPack;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -53,42 +53,45 @@ public class UsH1bFunction
             var doc = new HtmlAgilityPack.HtmlDocument();
             doc.LoadHtml(html);
 
-            // Find the main data table
-            var table = doc.DocumentNode.SelectSingleNode("//table[@id='myTable']") ?? doc.DocumentNode.SelectSingleNode("//table");
+            // Find any table with data, prioritizing myTable
+            var table = doc.DocumentNode.SelectSingleNode("//table[@id='myTable']") 
+                      ?? doc.DocumentNode.SelectSingleNode("//table[.//tr[td]]");
+
             if (table == null)
             {
                 _logger.LogWarning("Could not find the H1B data table on the page.");
                 return;
             }
 
-            var rows = table.SelectNodes(".//tr"); // Some tables don't have explicit tbody in HAP
+            var rows = table.SelectNodes(".//tr[td]"); 
             if (rows == null)
             {
-                _logger.LogWarning("H1B data table was empty.");
+                _logger.LogWarning("H1B data table was found but contains no data rows.");
                 return;
             }
 
             int recordsAdded = 0;
             var fetchedAt = DateTime.UtcNow;
 
-            _logger.LogInformation("Parsing live H-1B rows from HTML table...");
+            _logger.LogInformation("Parsing live H-1B rows...");
 
-            // Take the first 500 rows for the pipeline
-            foreach (var row in rows.Take(500))
+            foreach (var row in rows)
             {
                 try
                 {
                     var cols = row.SelectNodes("td");
                     if (cols == null || cols.Count < 7) continue;
 
-                    var employer = cols[0].InnerText.Trim();
-                    var socTitle = cols[1].InnerText.Trim(); // Job Title
-                    var salaryStr = cols[2].InnerText.Trim().Replace(",", "");
-                    var location = cols[3].InnerText.Trim(); // Usually "CITY, ST"
-                    var status = cols[6].InnerText.Trim();
+                    var employer = HtmlEntity.DeEntitize(cols[0].InnerText ?? "").Trim();
+                    var socTitle = HtmlEntity.DeEntitize(cols[1].InnerText ?? "").Trim();
+                    var salaryStr = HtmlEntity.DeEntitize(cols[2].InnerText ?? "").Trim().Replace(",", "");
+                    var location = HtmlEntity.DeEntitize(cols[3].InnerText ?? "").Trim();
+                    var status = HtmlEntity.DeEntitize(cols[6].InnerText ?? "").Trim();
 
-                    if (!status.Equals("CERTIFIED", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!decimal.TryParse(salaryStr, out var prevailingWage)) continue;
+                    // Flexible status check
+                    if (!status.Contains("CERTIFIED", StringComparison.OrdinalIgnoreCase)) continue;
+                    
+                    if (!decimal.TryParse(System.Text.RegularExpressions.Regex.Replace(salaryStr, @"[^\d\.]", ""), out var prevailingWage)) continue;
 
                     string city = location;
                     string state = "";
@@ -102,9 +105,9 @@ public class UsH1bFunction
                     _ingestionDb.RawH1bRecords.Add(new RawH1bRecord
                     {
                         EmployerName = employer.Length > 100 ? employer[..100] : employer,
-                        SocCode = "15-1132", // Default SWE SOC Code
+                        SocCode = "15-1132",
                         SocTitle = socTitle.Length > 100 ? socTitle[..100] : socTitle,
-                        WageLevel = 2, // Assume level II for averages
+                        WageLevel = 2,
                         PrevailingWage = prevailingWage,
                         CaseStatus = status,
                         Quarter = "FY2024",
@@ -114,11 +117,9 @@ public class UsH1bFunction
                     });
 
                     recordsAdded++;
+                    if (recordsAdded >= 1000) break; // Cap it
                 }
-                catch
-                {
-                    // Skip corrupt rows
-                }
+                catch { }
             }
 
             await _ingestionDb.SaveChangesAsync();

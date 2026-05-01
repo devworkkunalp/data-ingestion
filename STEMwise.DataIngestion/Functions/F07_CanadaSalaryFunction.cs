@@ -53,21 +53,12 @@ public class CanadaSalaryFunction
 
         try
         {
-            var client = _httpClientFactory.CreateClient("StatCan");
+            var client = _httpClientFactory.CreateClient(); // Use direct client
             
-            // StatCan Full Table Download (ZIP containing a large CSV)
-            var url = "getFullTableDownloadCSV/14100417/en";
+            // Direct StatCan Full Table Download (ZIP)
+            var url = "https://www150.statcan.gc.ca/n1/tbl/csv/14100417-eng.zip";
 
-            // 1. SMART TRIGGER: Check if the file is new before downloading 50MB
-            var request = new HttpRequestMessage(HttpMethod.Head, url);
-            var headResponse = await client.SendAsync(request);
-            
-            // (In production, we would store this ETag in a tracking table to compare against)
-            var currentETag = headResponse.Headers.ETag?.Tag;
-            _logger.LogInformation("Remote file ETag: {ETag}", currentETag ?? "None");
-
-            // 2. STREAM DOWNLOAD: Get the file as a stream (do not load into string)
-            _logger.LogInformation("Beginning streaming download...");
+            _logger.LogInformation("Beginning streaming download from {Url}...", url);
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode)
             {

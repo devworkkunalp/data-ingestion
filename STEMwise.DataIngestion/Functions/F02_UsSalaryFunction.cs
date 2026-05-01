@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using STEMwise.DataIngestion.Data;
 using STEMwise.DataIngestion.Models;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace STEMwise.DataIngestion.Functions;
 
@@ -226,24 +227,32 @@ public class UsSalaryFunction
 // --- BLS API Response Models ---
 internal class BlsApiResponse
 {
+    [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
+    [JsonPropertyName("Results")]
     public BlsResults? Results { get; set; }
 }
 
 internal class BlsResults
 {
+    [JsonPropertyName("series")]
     public List<BlsSeries>? Series { get; set; }
 }
 
 internal class BlsSeries
 {
+    [JsonPropertyName("seriesID")]
     public string SeriesId { get; set; } = string.Empty;
+    [JsonPropertyName("data")]
     public List<BlsDataPoint>? Data { get; set; }
 }
 
 internal class BlsDataPoint
 {
+    [JsonPropertyName("year")]
     public string Year { get; set; } = string.Empty;
+    [JsonPropertyName("period")]
     public string Period { get; set; } = string.Empty;
+    [JsonPropertyName("value")]
     public string? Value { get; set; }
 }

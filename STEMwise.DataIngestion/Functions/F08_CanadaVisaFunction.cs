@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HtmlAgilityPack;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -71,18 +72,19 @@ public class CanadaVisaFunction
                     var cols = row.SelectNodes("td|th");
                     if (cols == null || cols.Count < 6) continue;
 
-                    var drawType = cols[2].InnerText; // Round type
-                    var crsStr = cols[5].InnerText;   // CRS score of lowest-ranked candidate
+                    var drawType = HtmlEntity.DeEntitize(cols[2].InnerText ?? "").Trim();
+                    var crsStr = HtmlEntity.DeEntitize(cols[5].InnerText ?? "").Trim();
 
-                    if (!int.TryParse(System.Text.RegularExpressions.Regex.Replace(crsStr, @"[^\d]", ""), out int crsScore))
+                    var numericPart = System.Text.RegularExpressions.Regex.Replace(crsStr, @"[^\d]", "");
+                    if (string.IsNullOrEmpty(numericPart) || !int.TryParse(numericPart, out int crsScore))
                         continue;
 
-                    if (latestGeneralCrs == 0 && (drawType.Contains("General") || drawType.Contains("No program specified")))
+                    if (latestGeneralCrs == 0 && (drawType.Contains("General", StringComparison.OrdinalIgnoreCase) || drawType.Contains("No program specified", StringComparison.OrdinalIgnoreCase)))
                     {
                         latestGeneralCrs = crsScore;
                     }
 
-                    if (latestStemCrs == 0 && drawType.Contains("STEM"))
+                    if (latestStemCrs == 0 && drawType.Contains("STEM", StringComparison.OrdinalIgnoreCase))
                     {
                         latestStemCrs = crsScore;
                     }

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using STEMwise.DataIngestion.Data;
 using STEMwise.DataIngestion.Models;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace STEMwise.DataIngestion.Functions;
 
@@ -157,7 +158,12 @@ public class FxRateFunction
 // --- Response model for ExchangeRate-API v6 ---
 internal class ExchangeRateApiResponse
 {
+    [JsonPropertyName("result")]
     public string Result { get; set; } = string.Empty;
+
+    [JsonPropertyName("base_code")]
     public string BaseCode { get; set; } = string.Empty;
+
+    [JsonPropertyName("conversion_rates")]
     public Dictionary<string, decimal>? ConversionRates { get; set; }
 }

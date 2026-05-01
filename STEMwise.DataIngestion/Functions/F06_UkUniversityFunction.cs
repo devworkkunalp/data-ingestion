@@ -53,7 +53,10 @@ public class UkUniversityFunction
             var doc = new HtmlAgilityPack.HtmlDocument();
             doc.LoadHtml(html);
 
-            var tables = doc.DocumentNode.SelectNodes("//table[contains(@class, 'wikitable')]");
+            // Robust selector: try wikitable first, then fall back to any table with enough rows
+            var tables = doc.DocumentNode.SelectNodes("//table[contains(@class, 'wikitable')]") 
+                      ?? doc.DocumentNode.SelectNodes("//table[count(.//tr) > 5]");
+            
             if (tables == null)
             {
                 _logger.LogWarning("Could not find UK university tables.");
