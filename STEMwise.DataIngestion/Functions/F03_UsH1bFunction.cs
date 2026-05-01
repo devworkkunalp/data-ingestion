@@ -53,34 +53,24 @@ public class UsH1bFunction
             var doc = new HtmlAgilityPack.HtmlDocument();
             doc.LoadHtml(html);
 
-            // Find any table with data, prioritizing myTable
-            var table = doc.DocumentNode.SelectSingleNode("//table[@id='myTable']") 
-                      ?? doc.DocumentNode.SelectSingleNode("//table[.//tr[td]]");
-
-            if (table == null)
-            {
-                _logger.LogWarning("Could not find the H1B data table on the page.");
-                return;
-            }
-
-            var rows = table.SelectNodes(".//tr[td]"); 
+            var rows = doc.DocumentNode.SelectNodes("//table//tr[td]"); 
             if (rows == null)
             {
-                _logger.LogWarning("H1B data table was found but contains no data rows.");
+                _logger.LogWarning("Could not find any data rows on the page.");
                 return;
             }
+
+            _logger.LogInformation("Found {Count} raw rows to parse.", rows.Count);
 
             int recordsAdded = 0;
             var fetchedAt = DateTime.UtcNow;
-
-            _logger.LogInformation("Parsing live H-1B rows...");
 
             foreach (var row in rows)
             {
                 try
                 {
                     var cols = row.SelectNodes("td");
-                    if (cols == null || cols.Count < 7) continue;
+                    if (cols == null || cols.Count < 5) continue;
 
                     var employer = HtmlEntity.DeEntitize(cols[0].InnerText ?? "").Trim();
                     var socTitle = HtmlEntity.DeEntitize(cols[1].InnerText ?? "").Trim();

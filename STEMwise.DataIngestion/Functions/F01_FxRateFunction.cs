@@ -48,13 +48,11 @@ public class FxRateFunction
     public FxRateFunction(
         IHttpClientFactory httpClientFactory,
         IngestionDbContext ingestionDb,
-        ApiDbContext apiDb,
         IConfiguration config,
         ILogger<FxRateFunction> logger)
     {
         _httpClientFactory = httpClientFactory;
         _ingestionDb = ingestionDb;
-        _apiDb = apiDb;
         _config = config;
         _logger = logger;
     }
@@ -119,31 +117,10 @@ public class FxRateFunction
                     existing.FetchedAt = fetchedAt;
                 }
 
-                // --- Write to smtpwiseDB (API-ready store) ---
-                var apiExisting = await _apiDb.FxRates
-                    .FirstOrDefaultAsync(f => f.FromCurrency == "USD" && f.ToCurrency == targetCurrency);
-
-                if (apiExisting == null)
-                {
-                    _apiDb.FxRates.Add(new FxRate
-                    {
-                        FromCurrency = "USD",
-                        ToCurrency = targetCurrency,
-                        Rate = rate,
-                        LastUpdated = fetchedAt
-                    });
-                }
-                else
-                {
-                    apiExisting.Rate = rate;
-                    apiExisting.LastUpdated = fetchedAt;
-                }
-
                 updated++;
             }
 
             await _ingestionDb.SaveChangesAsync();
-            await _apiDb.SaveChangesAsync();
 
             _logger.LogInformation("F-01 FxRateSync complete. {Count} rates updated.", updated);
         }
