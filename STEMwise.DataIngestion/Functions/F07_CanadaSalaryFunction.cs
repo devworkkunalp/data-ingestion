@@ -97,8 +97,15 @@ public class CanadaSalaryFunction
             var latestSalaries = new Dictionary<string, (long Median, int Year)>();
 
             // Streaming read - extremely memory efficient
+            int rowCount = 0;
             while (await csv.ReadAsync())
             {
+                rowCount++;
+                if (rowCount % 10000 == 0)
+                {
+                    _logger.LogInformation("Still parsing... Processed {Count} rows.", rowCount);
+                }
+                
                 try
                 {
                     // "REF_DATE" is usually YYYY-MM

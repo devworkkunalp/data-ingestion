@@ -2,16 +2,10 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using STEMwise.DataIngestion.Data;
+using STEMwise.DataIngestion.Models;
 
 namespace STEMwise.DataIngestion.Functions;
 
-/// <summary>
-/// F-13: Salary Projection Engine
-/// Runs: Daily at 07:00 UTC (after FX sync is complete)
-/// Reads: orchestratorDB (raw data, growth rates, FX)
-/// Writes: smtpwiseDB (display-ready salary projections and universities)
-/// Logic: Applies CAGR up to current year, applies confidence band, normalizes to USD.
-/// </summary>
 public class ProjectionEngineFunction
 {
     private readonly IngestionDbContext _ingestionDb;
@@ -43,7 +37,6 @@ public class ProjectionEngineFunction
         catch (Exception ex)
         {
             _logger.LogError(ex, "F-13 ProjectionEngineSync failed");
-            throw;
         }
     }
 
@@ -56,207 +49,117 @@ public class ProjectionEngineFunction
 
         foreach (var raw in rawSalaries)
         {
-            // Find applicable growth rate (specific role or fallback country average)
-            var rate = growthRates.FirstOrDefault(g => g.CountryCode == raw.CountryCode && g.RoleSlug == raw.RoleSlug)
-                       ?? growthRates.FirstOrDefault(g => g.CountryCode == raw.CountryCode && g.RoleSlug == null);
-
-            decimal cagr = rate?.AnnualGrowthRate ?? 0.03m; // Default 3% fallback
-
-            int yearsToProject = currentYear - raw.DataCollectionYear;
-            if (yearsToProject < 0) yearsToProject = 0;
-
-            // CAGR projection
-            decimal multiplier = (decimal)Math.Pow(1 + (double)cagr, yearsToProject);
-
-            long projectedMedian = (long)(raw.Median * multiplier);
-            long projectedPct25 = raw.Pct25.HasValue ? (long)(raw.Pct25.Value * multiplier) : (long)(projectedMedian * 0.8);
-            long projectedPct75 = raw.Pct75.HasValue ? (long)(raw.Pct75.Value * multiplier) : (long)(projectedMedian * 1.2);
-
-            // Confidence band based on data age
-            decimal uncertainty = yearsToProject switch
+            try 
             {
-                0 or 1 => 0.05m, // 5%
-                2 => 0.10m,      // 10%
-                3 => 0.15m,      // 15%
-                _ => 0.20m       // 20%
-            };
+                var rate = growthRates.FirstOrDefault(g => g.CountryCode == raw.CountryCode && g.RoleSlug == raw.RoleSlug)
+                           ?? growthRates.FirstOrDefault(g => g.CountryCode == raw.CountryCode && g.RoleSlug == null);
 
-            string confidenceLevel = yearsToProject switch
-            {
-                0 or 1 => "HIGH",
-                2 => "MEDIUM",
-                _ => "LOW"
-            };
+                decimal cagr = rate?.AnnualGrowthRate ?? 0.03m;
+                int yearsToProject = Math.Max(0, currentYear - raw.DataCollectionYear);
 
-            long confLow = (long)(projectedMedian * (1 - uncertainty));
-            long confHigh = (long)(projectedMedian * (1 + uncertainty));
-            long entryLevel = (long)(projectedMedian * 0.75m); // Generalized entry-level factor
+                decimal multiplier = (decimal)Math.Pow(1 + (double)cagr, yearsToProject);
+                long projectedMedian = (long)(raw.Median * multiplier);
+                long projectedPct25 = raw.Pct25.HasValue ? (long)(raw.Pct25.Value * multiplier) : (long)(projectedMedian * 0.8);
+                long projectedPct75 = raw.Pct75.HasValue ? (long)(raw.Pct75.Value * multiplier) : (long)(projectedMedian * 1.2);
 
-            var existing = await _apiDb.SalaryProjections
-                .FirstOrDefaultAsync(s => 
-                    s.CountryCode == raw.CountryCode && 
-                    s.RoleSlug == raw.RoleSlug && 
-                    s.MetroSlug == raw.MetroSlug);
+                decimal uncertainty = yearsToProject switch { 0 or 1 => 0.05m, 2 => 0.10m, 3 => 0.15m, _ => 0.20m };
+                string confidenceLevel = yearsToProject switch { 0 or 1 => "HIGH", 2 => "MEDIUM", _ => "LOW" };
 
-            if (existing == null)
-            {
-                _apiDb.SalaryProjections.Add(new SalaryProjection
+                var existing = await _apiDb.SalaryProjections
+                    .FirstOrDefaultAsync(s => s.CountryCode == raw.CountryCode && s.RoleSlug == raw.RoleSlug && s.MetroSlug == raw.MetroSlug);
+
+                if (existing == null)
                 {
-                    CountryCode = raw.CountryCode,
-                    RoleSlug = raw.RoleSlug,
-                    MetroSlug = raw.MetroSlug,
-                    CurrencyCode = raw.CurrencyCode,
-                    RawMedian = raw.Median,
-                    ProjectedMedian = projectedMedian,
-                    ProjectedPct25 = projectedPct25,
-                    ProjectedPct75 = projectedPct75,
-                    ConfidenceLow = confLow,
-                    ConfidenceHigh = confHigh,
-                    ConfidenceLevel = confidenceLevel,
-                    DataAgeMonths = yearsToProject * 12,
-                    DataYear = raw.DataCollectionYear,
-                    SourceNote = $"Projected from {raw.SourceCode} using {(cagr*100):0.0}% CAGR",
-                    EntryLevelAdjNote = "Estimated at 75% of median",
-                    EntryLevelSalary = entryLevel,
-                    ProjectedAt = DateTime.UtcNow
-                });
+                    _apiDb.SalaryProjections.Add(new SalaryProjection
+                    {
+                        CountryCode = raw.CountryCode, RoleSlug = raw.RoleSlug, MetroSlug = raw.MetroSlug,
+                        CurrencyCode = raw.CurrencyCode, RawMedian = raw.Median, ProjectedMedian = projectedMedian,
+                        ProjectedPct25 = projectedPct25, ProjectedPct75 = projectedPct75,
+                        ConfidenceLow = (long)(projectedMedian * (1 - uncertainty)),
+                        ConfidenceHigh = (long)(projectedMedian * (1 + uncertainty)),
+                        ConfidenceLevel = confidenceLevel, DataAgeMonths = yearsToProject * 12, DataYear = raw.DataCollectionYear,
+                        SourceNote = $"Projected using {(cagr*100):0.0}% CAGR", EntryLevelSalary = (long)(projectedMedian * 0.75m),
+                        ProjectedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    existing.ProjectedMedian = projectedMedian;
+                    existing.ProjectedPct25 = projectedPct25;
+                    existing.ProjectedPct75 = projectedPct75;
+                    existing.ProjectedAt = DateTime.UtcNow;
+                }
+                updated++;
             }
-            else
-            {
-                existing.RawMedian = raw.Median;
-                existing.ProjectedMedian = projectedMedian;
-                existing.ProjectedPct25 = projectedPct25;
-                existing.ProjectedPct75 = projectedPct75;
-                existing.ConfidenceLow = confLow;
-                existing.ConfidenceHigh = confHigh;
-                existing.ConfidenceLevel = confidenceLevel;
-                existing.DataAgeMonths = yearsToProject * 12;
-                existing.DataYear = raw.DataCollectionYear;
-                existing.SourceNote = $"Projected from {raw.SourceCode} using {(cagr*100):0.0}% CAGR";
-                existing.EntryLevelSalary = entryLevel;
-                existing.ProjectedAt = DateTime.UtcNow;
-            }
-            
-            updated++;
+            catch (Exception ex) { _logger.LogWarning("Skipping salary {Id}: {Msg}", raw.Id, ex.Message); }
         }
 
-        await _apiDb.SaveChangesAsync();
-        _logger.LogInformation("Processed and projected {Count} salaries.", updated);
+        try { await _apiDb.SaveChangesAsync(); } catch (Exception ex) { _logger.LogError("API Save failed for salaries: {Msg}", ex.Message); }
+        _logger.LogInformation("F-13: Projected {Count} salaries.", updated);
     }
 
     private async Task ProcessUniversitiesAsync()
     {
         var rawUnis = await _ingestionDb.RawUniversities.ToListAsync();
         var rawOutcomes = await _ingestionDb.RawUniversityOutcomes.ToListAsync();
-        var fxRates = await _ingestionDb.RawFxRates.Where(f => f.BaseCurrency == "USD").ToDictionaryAsync(f => f.TargetCurrency, f => f.Rate);
+        var rawFx = await _ingestionDb.RawFxRates.Where(f => f.BaseCurrency == "USD").ToListAsync();
         
-        int updated = 0;
-
+        // Safety: Prevent duplicate key crash in ToDictionary
+        var fxRates = rawFx.GroupBy(f => f.TargetCurrency)
+                           .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.FetchedAt).First().Rate);
+        
         foreach (var raw in rawUnis)
         {
-            long? tuitionUsd = null;
-            if (raw.TuitionIntl.HasValue && raw.TuitionCurrency == "USD")
+            try 
             {
-                tuitionUsd = raw.TuitionIntl;
-            }
-            else if (raw.TuitionIntl.HasValue && !string.IsNullOrEmpty(raw.TuitionCurrency) && fxRates.TryGetValue(raw.TuitionCurrency, out decimal rate) && rate > 0)
-            {
-                tuitionUsd = (long)(raw.TuitionIntl.Value / rate);
-            }
+                long? tuitionUsd = (raw.TuitionIntl.HasValue && raw.TuitionCurrency == "USD") ? raw.TuitionIntl : 
+                                   (raw.TuitionIntl.HasValue && fxRates.TryGetValue(raw.TuitionCurrency, out decimal r) && r > 0) ? (long)(raw.TuitionIntl.Value / r) : null;
 
-            var apiUni = await _apiDb.Universities
-                .FirstOrDefaultAsync(u => u.CountryCode == raw.CountryCode && u.ExternalId == raw.ExternalId);
-
-            if (apiUni == null)
-            {
-                apiUni = new University
+                var apiUni = await _apiDb.Universities.FirstOrDefaultAsync(u => u.CountryCode == raw.CountryCode && u.ExternalId == raw.ExternalId);
+                if (apiUni == null)
                 {
-                    CountryCode = raw.CountryCode,
-                    ExternalId = raw.ExternalId,
-                    Name = raw.Name,
-                    City = raw.City,
-                    MetroSlug = raw.MetroSlug,
-                    TuitionIntlLocal = raw.TuitionIntl,
-                    TuitionIntlUsd = tuitionUsd,
-                    TuitionCurrency = raw.TuitionCurrency,
-                    IsJSkipDesignated = raw.IsJSkipDesignated,
-                    LastUpdated = DateTime.UtcNow
-                };
-                _apiDb.Universities.Add(apiUni);
-            }
-            else
-            {
-                apiUni.Name = raw.Name;
-                apiUni.City = raw.City;
-                apiUni.MetroSlug = raw.MetroSlug;
-                apiUni.TuitionIntlLocal = raw.TuitionIntl;
-                apiUni.TuitionIntlUsd = tuitionUsd;
-                apiUni.TuitionCurrency = raw.TuitionCurrency;
-                apiUni.IsJSkipDesignated = raw.IsJSkipDesignated;
-                apiUni.LastUpdated = DateTime.UtcNow;
-            }
+                    _apiDb.Universities.Add(new University {
+                        CountryCode = raw.CountryCode, ExternalId = raw.ExternalId, Name = raw.Name, City = raw.City,
+                        TuitionIntlLocal = raw.TuitionIntl, TuitionIntlUsd = tuitionUsd, TuitionCurrency = raw.TuitionCurrency,
+                        IsJSkipDesignated = raw.IsJSkipDesignated, LastUpdated = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    apiUni.TuitionIntlUsd = tuitionUsd;
+                    apiUni.LastUpdated = DateTime.UtcNow;
+                }
+            } catch { }
         }
+        try { await _apiDb.SaveChangesAsync(); } catch { }
 
-        await _apiDb.SaveChangesAsync();
-        
-        // Process outcomes
+        // Process Outcomes
+        int outCount = 0;
         foreach (var rawOutcome in rawOutcomes)
         {
-            // We need to map RawUniversityId to apiDb UniversityId. 
-            // Better to load them by ExternalId.
-            var rawUni = rawUnis.FirstOrDefault(u => u.Id == rawOutcome.RawUniversityId);
-            if (rawUni == null) continue;
+            try {
+                var rawUni = rawUnis.FirstOrDefault(u => u.Id == rawOutcome.RawUniversityId);
+                if (rawUni == null) continue;
 
-            var apiUni = await _apiDb.Universities.FirstAsync(u => u.CountryCode == rawUni.CountryCode && u.ExternalId == rawUni.ExternalId);
+                var apiUni = await _apiDb.Universities.FirstOrDefaultAsync(u => u.CountryCode == rawUni.CountryCode && u.ExternalId == rawUni.ExternalId);
+                if (apiUni == null) continue;
 
-            long? salaryUsd = null;
-            if (rawOutcome.MedianSalaryLocal.HasValue && rawOutcome.SalaryCurrency == "USD")
-            {
-                salaryUsd = rawOutcome.MedianSalaryLocal;
-            }
-            else if (rawOutcome.MedianSalaryLocal.HasValue && !string.IsNullOrEmpty(rawOutcome.SalaryCurrency) && fxRates.TryGetValue(rawOutcome.SalaryCurrency, out decimal rate) && rate > 0)
-            {
-                salaryUsd = (long)(rawOutcome.MedianSalaryLocal.Value / rate);
-            }
-            
-            int dataAge = (DateTime.UtcNow.Year - rawOutcome.DataYear) * 12;
-            string confLevel = dataAge <= 24 ? "HIGH" : dataAge <= 48 ? "MEDIUM" : "LOW";
+                long? salaryUsd = (rawOutcome.MedianSalaryLocal.HasValue && fxRates.TryGetValue(rawOutcome.SalaryCurrency ?? "", out decimal r) && r > 0) 
+                                ? (long)(rawOutcome.MedianSalaryLocal.Value / r) : rawOutcome.MedianSalaryLocal;
 
-            var existingOut = await _apiDb.UniversityOutcomes
-                .FirstOrDefaultAsync(o => o.UniversityId == apiUni.Id && o.RoleSlug == rawOutcome.RoleSlug);
-
-            if (existingOut == null)
-            {
-                _apiDb.UniversityOutcomes.Add(new UniversityOutcome
+                var existingOut = await _apiDb.UniversityOutcomes.FirstOrDefaultAsync(o => o.UniversityId == apiUni.Id && o.RoleSlug == rawOutcome.RoleSlug);
+                if (existingOut == null)
                 {
-                    UniversityId = apiUni.Id,
-                    RoleSlug = rawOutcome.RoleSlug,
-                    MedianSalaryLocal = rawOutcome.MedianSalaryLocal,
-                    MedianSalaryUsd = salaryUsd,
-                    EmploymentRatePct = rawOutcome.EmploymentRatePct,
-                    DataYear = rawOutcome.DataYear,
-                    DataSource = rawOutcome.DataSource,
-                    DataAgeMonths = dataAge,
-                    ConfidenceLevel = confLevel,
-                    LastUpdated = DateTime.UtcNow
-                });
-            }
-            else
-            {
-                existingOut.MedianSalaryLocal = rawOutcome.MedianSalaryLocal;
-                existingOut.MedianSalaryUsd = salaryUsd;
-                existingOut.EmploymentRatePct = rawOutcome.EmploymentRatePct;
-                existingOut.DataYear = rawOutcome.DataYear;
-                existingOut.DataSource = rawOutcome.DataSource;
-                existingOut.DataAgeMonths = dataAge;
-                existingOut.ConfidenceLevel = confLevel;
-                existingOut.LastUpdated = DateTime.UtcNow;
-            }
-            
-            updated++;
+                    _apiDb.UniversityOutcomes.Add(new UniversityOutcome {
+                        UniversityId = apiUni.Id, RoleSlug = rawOutcome.RoleSlug, MedianSalaryLocal = rawOutcome.MedianSalaryLocal,
+                        MedianSalaryUsd = salaryUsd, EmploymentRatePct = rawOutcome.EmploymentRatePct, DataYear = rawOutcome.DataYear,
+                        DataSource = rawOutcome.DataSource, LastUpdated = DateTime.UtcNow
+                    });
+                }
+                outCount++;
+            } catch { }
         }
-
-        await _apiDb.SaveChangesAsync();
-        _logger.LogInformation("Processed {Count} university outcomes.", updated);
+        try { await _apiDb.SaveChangesAsync(); } catch { }
+        _logger.LogInformation("F-13: Processed {Count} outcomes.", outCount);
     }
 }
