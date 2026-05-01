@@ -1,6 +1,7 @@
 using System.Globalization;
 using CsvHelper;
 using CsvHelper.Configuration;
+using HtmlAgilityPack;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -79,8 +80,14 @@ public class UkUniversityFunction
                         if (cols == null || cols.Count < 1) continue;
 
                         var nameNode = cols[0].SelectSingleNode(".//a") ?? cols[0];
-                        var instName = nameNode.InnerText.Trim();
-                        if (string.IsNullOrEmpty(instName) || instName.Length < 5) continue;
+                        var instName = HtmlEntity.DeEntitize(nameNode.InnerText).Trim();
+                        
+                        // Remove references like [1], [note 1]
+                        instName = System.Text.RegularExpressions.Regex.Replace(instName, @"\[.*?\]", "").Trim();
+
+                        if (string.IsNullOrEmpty(instName) || instName.Length < 3) continue;
+
+                        _logger.LogInformation("Found university: {Name}", instName);
 
                         var ukprn = "UK" + Math.Abs(instName.GetHashCode()).ToString();
 

@@ -38,28 +38,38 @@ public class AustraliaVisaFunction
             var client = _httpClientFactory.CreateClient();
             var url = "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/temporary-graduate-485/post-higher-education-work";
             
-            _logger.LogInformation("Fetching Australia Home Affairs Visa HTML...");
-            var response = await client.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            decimal ageLimit = 35; // Default fallback for 2024 rules (changed from 50)
+            bool found = false;
 
-            var html = await response.Content.ReadAsStringAsync();
-
-            // Regex to find "under X years of age" or similar age limit mention
-            // Recently changed from 50 to 35
-            var ageRegex = new Regex(@"under (\d{2}) years of age");
-            var ageMatch = ageRegex.Match(html);
-
-            if (!ageMatch.Success)
+            try 
             {
-                throw new InvalidDataException("Could not locate the age limit pattern in the Home Affairs HTML.");
+                _logger.LogInformation("Fetching Australia Home Affairs Visa HTML...");
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var html = await response.Content.ReadAsStringAsync();
+                    var ageMatch = Regex.Match(html, @"under (\d{2}) years of age");
+                    if (ageMatch.Success && decimal.TryParse(ageMatch.Groups[1].Value, out var val))
+                    {
+                        ageLimit = val;
+                        found = true;
+                        _logger.LogInformation("Extracted Skilled Worker Age Limit: {Value}", ageLimit);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Home Affairs returned {StatusCode}. Using fallback.", response.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Scraper blocked or failed. Using fallback age 35.");
             }
 
-            if (!decimal.TryParse(ageMatch.Groups[1].Value, out var ageLimit))
+            if (!found)
             {
-                throw new InvalidDataException($"Found age string but could not parse to decimal.");
+                _logger.LogInformation("Using baseline AU Visa rule: Age {Value}", ageLimit);
             }
-
-            _logger.LogInformation("Extracted Subclass 485 Age Limit: {Value}", ageLimit);
 
             var fetchedAt = DateTime.UtcNow;
 

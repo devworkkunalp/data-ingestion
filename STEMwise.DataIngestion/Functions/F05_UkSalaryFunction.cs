@@ -57,10 +57,15 @@ public class UkSalaryFunction
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (!root.TryGetProperty("obs", out var obsArray)) return;
+            if (!root.TryGetProperty("obs", out var obsElement))
+            {
+                _logger.LogWarning("No 'obs' property found in Nomis JSON.");
+                return;
+            }
 
             var dimensions = root.GetProperty("dimension");
             var occCats = dimensions.GetProperty("occupation").GetProperty("category").GetProperty("index");
+
             var fetchedAt = DateTime.UtcNow;
             int updated = 0;
 
@@ -71,7 +76,9 @@ public class UkSalaryFunction
 
                 long medianPay = 0, pct25 = 0, pct75 = 0;
 
-                foreach (var obs in obsArray.EnumerateArray())
+                if (obsElement.ValueKind != JsonValueKind.Array) continue;
+
+                foreach (var obs in obsElement.EnumerateArray())
                 {
                     try {
                         int occ = obs.GetProperty("occupation").GetProperty("value").GetInt32();
@@ -89,6 +96,7 @@ public class UkSalaryFunction
 
                 if (medianPay > 0)
                 {
+                    _logger.LogInformation("Found salary for {Role}: {Median} GBP", roleSlug, medianPay);
                     var existing = await _ingestionDb.RawSalaryBenchmarks
                         .FirstOrDefaultAsync(s => s.CountryCode == "GB" && s.RoleSlug == roleSlug && s.MetroSlug == "gb-national");
 
