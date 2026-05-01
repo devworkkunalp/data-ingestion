@@ -7,13 +7,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using STEMwise.DataIngestion.Data;
 using STEMwise.DataIngestion.Models;
+using ClosedXML.Excel;
 
 namespace STEMwise.DataIngestion.Functions;
 
 /// <summary>
 /// F-10: Australia Universities Pipeline (QILT)
-/// Dynamic streaming of QILT Graduate Outcomes Survey CSV.
-/// No static fallbacks.
+/// Dynamic streaming of QILT Graduate Outcomes Survey (Supports CSV and Excel).
 /// </summary>
 public class AustraliaUniFunction
 {
@@ -47,97 +47,120 @@ public class AustraliaUniFunction
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync();
-            using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
-            
-            _logger.LogInformation("Found {Count} files in ZIP: {Files}", archive.Entries.Count, string.Join(", ", archive.Entries.Select(e => e.Name)));
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
 
+            using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+            
+            var excelEntry = archive.Entries.FirstOrDefault(e => e.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase));
             var csvEntry = archive.Entries.FirstOrDefault(e => e.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase));
-            
-            if (csvEntry == null)
+
+            if (excelEntry != null)
             {
-                _logger.LogWarning("No CSV found in QILT ZIP.");
-                return;
+                await ProcessExcelAsync(excelEntry);
             }
-
-            await using var csvStream = csvEntry.Open();
-            using var reader = new StreamReader(csvStream);
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture) { HasHeaderRecord = true, MissingFieldFound = null, BadDataFound = null };
-            using var csv = new CsvReader(reader, config);
-
-            var fetchedAt = DateTime.UtcNow;
-            int updated = 0;
-
-            while (await csv.ReadAsync())
+            else if (csvEntry != null)
             {
-                try
-                {
-                    var instName = csv.GetField<string>("Institution Name") 
-                                ?? csv.GetField<string>("Institution")
-                                ?? csv.GetField<string>("INSTITUTION");
-                    
-                    var empRateStr = csv.GetField<string>("Full-time Employment Rate") 
-                                  ?? csv.GetField<string>("Employment Rate")
-                                  ?? csv.GetField<string>("EMPLOYMENT");
-
-                    if (string.IsNullOrEmpty(instName) || string.IsNullOrEmpty(empRateStr))
-                        continue;
-
-                    if (!decimal.TryParse(empRateStr.Replace("%", "").Trim(), out var empRate))
-                        empRate = 0;
-
-                    var cricosCode = "AU" + Math.Abs(instName.GetHashCode()).ToString();
-
-                    var uni = await _ingestionDb.RawUniversities.FirstOrDefaultAsync(u => u.CountryCode == "AU" && (u.ExternalId == cricosCode || u.Name == instName));
-                    if (uni == null)
-                    {
-                        uni = new RawUniversity
-                        {
-                            CountryCode = "AU",
-                            ExternalId = cricosCode,
-                            Name = instName,
-                            TuitionIntl = 0,
-                            TuitionCurrency = "AUD",
-                            FetchedAt = fetchedAt,
-                            SourceCode = "QILT-GOS-2024"
-                        };
-                        _ingestionDb.RawUniversities.Add(uni);
-                    }
-                    else
-                    {
-                        uni.FetchedAt = fetchedAt;
-                    }
-
-                    await _ingestionDb.SaveChangesAsync();
-
-                    var outcome = await _ingestionDb.RawUniversityOutcomes.FirstOrDefaultAsync(o => o.RawUniversityId == uni.Id && o.RoleSlug == "software-engineer");
-                    if (outcome == null)
-                    {
-                        _ingestionDb.RawUniversityOutcomes.Add(new RawUniversityOutcome
-                        {
-                            RawUniversityId = uni.Id,
-                            RoleSlug = "software-engineer",
-                            EmploymentRatePct = empRate,
-                            DataYear = 2024,
-                            DataSource = "QILT-GOS",
-                            FetchedAt = fetchedAt
-                        });
-                    }
-                    else
-                    {
-                        outcome.EmploymentRatePct = empRate;
-                        outcome.FetchedAt = fetchedAt;
-                    }
-                    updated++;
-                }
-                catch { }
+                await ProcessCsvAsync(csvEntry);
             }
-
-            await _ingestionDb.SaveChangesAsync();
-            _logger.LogInformation("F-10 AustraliaUniSync complete. Updated {Count} AU universities.", updated);
+            else
+            {
+                _logger.LogWarning("No data file (.xlsx or .csv) found in QILT ZIP.");
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "F-10 AustraliaUniSync failed.");
         }
+    }
+
+    private async Task ProcessExcelAsync(ZipArchiveEntry entry)
+    {
+        _logger.LogInformation("Parsing QILT Excel: {Name}", entry.Name);
+        using var stream = entry.Open();
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        ms.Position = 0;
+
+        using var workbook = new XLWorkbook(ms);
+        var worksheet = workbook.Worksheets.FirstOrDefault();
+        if (worksheet == null) return;
+
+        var fetchedAt = DateTime.UtcNow;
+        int updated = 0;
+
+        // Iterate through rows, skip headers (QILT reports often have many)
+        foreach (var row in worksheet.RowsUsed().Skip(5)) 
+        {
+            try 
+            {
+                var instName = row.Cell(1).GetString(); // Adjust column based on observation
+                var empRateStr = row.Cell(2).GetString(); 
+
+                if (string.IsNullOrEmpty(instName) || instName.Length < 3) continue;
+
+                var empRate = decimal.TryParse(empRateStr.Replace("%", "").Trim(), out var val) ? val : 0;
+                await UpsertUniversityAsync(instName, empRate, fetchedAt);
+                updated++;
+            }
+            catch { }
+        }
+        _logger.LogInformation("F-10 AustraliaUniSync complete. Updated {Count} universities from Excel.", updated);
+    }
+
+    private async Task ProcessCsvAsync(ZipArchiveEntry entry)
+    {
+        _logger.LogInformation("Parsing QILT CSV: {Name}", entry.Name);
+        await using var csvStream = entry.Open();
+        using var reader = new StreamReader(csvStream);
+        var config = new CsvConfiguration(CultureInfo.InvariantCulture) { HasHeaderRecord = true, MissingFieldFound = null };
+        using var csv = new CsvReader(reader, config);
+
+        var fetchedAt = DateTime.UtcNow;
+        int updated = 0;
+        while (await csv.ReadAsync())
+        {
+            try {
+                var instName = csv.GetField<string>(0);
+                var empRateStr = csv.GetField<string>(1);
+                if (string.IsNullOrEmpty(instName)) continue;
+                var empRate = decimal.TryParse(empRateStr?.Replace("%", "").Trim(), out var val) ? val : 0;
+                await UpsertUniversityAsync(instName, empRate, fetchedAt);
+                updated++;
+            } catch { }
+        }
+        _logger.LogInformation("F-10 AustraliaUniSync complete. Updated {Count} universities from CSV.", updated);
+    }
+
+    private async Task UpsertUniversityAsync(string name, decimal empRate, DateTime fetchedAt)
+    {
+        var extId = "AU" + Math.Abs(name.GetHashCode()).ToString();
+        var uni = await _ingestionDb.RawUniversities.FirstOrDefaultAsync(u => u.CountryCode == "AU" && (u.ExternalId == extId || u.Name == name));
+        
+        if (uni == null)
+        {
+            uni = new RawUniversity {
+                CountryCode = "AU", ExternalId = extId, Name = name,
+                TuitionIntl = 0, TuitionCurrency = "AUD", FetchedAt = fetchedAt, SourceCode = "QILT-LIVE"
+            };
+            _ingestionDb.RawUniversities.Add(uni);
+            await _ingestionDb.SaveChangesAsync();
+        }
+
+        var outcome = await _ingestionDb.RawUniversityOutcomes.FirstOrDefaultAsync(o => o.RawUniversityId == uni.Id && o.RoleSlug == "software-engineer");
+        if (outcome == null)
+        {
+            _ingestionDb.RawUniversityOutcomes.Add(new RawUniversityOutcome {
+                RawUniversityId = uni.Id, RoleSlug = "software-engineer",
+                EmploymentRatePct = empRate, DataYear = 2024, DataSource = "QILT-GOS", FetchedAt = fetchedAt
+            });
+        }
+        else
+        {
+            outcome.EmploymentRatePct = empRate;
+            outcome.FetchedAt = fetchedAt;
+        }
+        await _ingestionDb.SaveChangesAsync();
     }
 }
