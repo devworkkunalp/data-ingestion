@@ -54,23 +54,23 @@ public class IngestionDbContext : DbContext
         // Growth rates — default CAGR values seeded
         modelBuilder.Entity<SalaryGrowthRate>().HasData(
             // USA
-            new SalaryGrowthRate { Id = 1, CountryCode = "US", RoleSlug = "software-engineer", AnnualGrowthRate = 0.048m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = DateTime.UtcNow },
-            new SalaryGrowthRate { Id = 2, CountryCode = "US", RoleSlug = "data-scientist", AnnualGrowthRate = 0.062m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = DateTime.UtcNow },
-            new SalaryGrowthRate { Id = 3, CountryCode = "US", RoleSlug = "cybersecurity-eng", AnnualGrowthRate = 0.051m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = DateTime.UtcNow },
-            new SalaryGrowthRate { Id = 4, CountryCode = "US", RoleSlug = "electrical-engineer", AnnualGrowthRate = 0.032m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = DateTime.UtcNow },
-            new SalaryGrowthRate { Id = 5, CountryCode = "US", RoleSlug = "ml-engineer", AnnualGrowthRate = 0.074m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = DateTime.UtcNow },
+            new SalaryGrowthRate { Id = 1, CountryCode = "US", RoleSlug = "software-engineer", AnnualGrowthRate = 0.048m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SalaryGrowthRate { Id = 2, CountryCode = "US", RoleSlug = "data-scientist", AnnualGrowthRate = 0.062m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SalaryGrowthRate { Id = 3, CountryCode = "US", RoleSlug = "cybersecurity-eng", AnnualGrowthRate = 0.051m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SalaryGrowthRate { Id = 4, CountryCode = "US", RoleSlug = "electrical-engineer", AnnualGrowthRate = 0.032m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SalaryGrowthRate { Id = 5, CountryCode = "US", RoleSlug = "ml-engineer", AnnualGrowthRate = 0.074m, GrowthPeriodFrom = 2019, GrowthPeriodTo = 2024, Source = "BLS-OES-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
             // UK
-            new SalaryGrowthRate { Id = 6, CountryCode = "GB", RoleSlug = "software-engineer", AnnualGrowthRate = 0.042m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ONS-ASHE-historical", LastUpdated = DateTime.UtcNow },
-            new SalaryGrowthRate { Id = 7, CountryCode = "GB", RoleSlug = "data-scientist", AnnualGrowthRate = 0.058m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ONS-ASHE-historical", LastUpdated = DateTime.UtcNow },
-            new SalaryGrowthRate { Id = 8, CountryCode = "GB", RoleSlug = "cybersecurity-eng", AnnualGrowthRate = 0.049m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ONS-ASHE-historical", LastUpdated = DateTime.UtcNow },
-            new SalaryGrowthRate { Id = 9, CountryCode = "GB", RoleSlug = "electrical-engineer", AnnualGrowthRate = 0.031m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ONS-ASHE-historical", LastUpdated = DateTime.UtcNow },
+            new SalaryGrowthRate { Id = 6, CountryCode = "GB", RoleSlug = "software-engineer", AnnualGrowthRate = 0.042m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ONS-ASHE-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SalaryGrowthRate { Id = 7, CountryCode = "GB", RoleSlug = "data-scientist", AnnualGrowthRate = 0.058m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ONS-ASHE-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SalaryGrowthRate { Id = 8, CountryCode = "GB", RoleSlug = "cybersecurity-eng", AnnualGrowthRate = 0.049m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ONS-ASHE-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SalaryGrowthRate { Id = 9, CountryCode = "GB", RoleSlug = "electrical-engineer", AnnualGrowthRate = 0.031m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ONS-ASHE-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
             // Canada
-            new SalaryGrowthRate { Id = 10, CountryCode = "CA", RoleSlug = null, AnnualGrowthRate = 0.048m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2024, Source = "StatCan-LFS-historical", LastUpdated = DateTime.UtcNow },
+            new SalaryGrowthRate { Id = 10, CountryCode = "CA", RoleSlug = null, AnnualGrowthRate = 0.048m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2024, Source = "StatCan-LFS-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
             // Australia
-            new SalaryGrowthRate { Id = 11, CountryCode = "AU", RoleSlug = "software-engineer", AnnualGrowthRate = 0.045m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ABS-EEH-historical", LastUpdated = DateTime.UtcNow },
-            new SalaryGrowthRate { Id = 12, CountryCode = "AU", RoleSlug = "data-scientist", AnnualGrowthRate = 0.060m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ABS-EEH-historical", LastUpdated = DateTime.UtcNow },
+            new SalaryGrowthRate { Id = 11, CountryCode = "AU", RoleSlug = "software-engineer", AnnualGrowthRate = 0.045m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ABS-EEH-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new SalaryGrowthRate { Id = 12, CountryCode = "AU", RoleSlug = "data-scientist", AnnualGrowthRate = 0.060m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2025, Source = "ABS-EEH-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
             // Japan
-            new SalaryGrowthRate { Id = 13, CountryCode = "JP", RoleSlug = null, AnnualGrowthRate = 0.037m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2024, Source = "MHLW-historical", LastUpdated = DateTime.UtcNow }
+            new SalaryGrowthRate { Id = 13, CountryCode = "JP", RoleSlug = null, AnnualGrowthRate = 0.037m, GrowthPeriodFrom = 2020, GrowthPeriodTo = 2024, Source = "MHLW-historical", LastUpdated = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
         );
     }
 }

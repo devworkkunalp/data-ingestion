@@ -62,6 +62,7 @@ var host = new HostBuilder()
         {
             client.BaseAddress = new Uri("https://www.abs.gov.au/");
             client.Timeout = TimeSpan.FromSeconds(120);
+            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         });
 
         services.AddHttpClient("QILT", client =>
@@ -80,6 +81,7 @@ var host = new HostBuilder()
         {
             client.BaseAddress = new Uri("https://www.dol.gov/");
             client.Timeout = TimeSpan.FromSeconds(180);
+            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
         });
     })
     .Build();
